@@ -113,7 +113,7 @@ fn run(matches: &ArgMatches) -> Result<i32, failure::Error> {
         cargo.arg("--release");
     }
 
-    cargo.args(&["--", "-C", "lto", "--emit=obj", "-Z", "emit-stack-sizes"]);
+    cargo.args(&["--", "-C", "lto", "--emit=obj,llvm-bc", "-Z", "emit-stack-sizes"]);
     if let Some(arg) = matches.value_of("--") {
         cargo.arg(arg);
     }

@@ -25,6 +25,10 @@ use xmas_elf::{
     ElfFile,
 };
 
+use llvm_ir::module::Module;
+use llvm_ir::debugloc::HasDebugLoc;
+use llvm_ir_analysis::{ModuleAnalysis, CallGraph};
+
 /// Functions found after analyzing an executable
 #[derive(Clone, Debug)]
 pub struct Functions<'a> {
@@ -323,18 +327,46 @@ pub fn analyze_executable(elf: &[u8]) -> Result<Functions<'_>, failure::Error> {
     })
 }
 
+fn get_stack_height(stack_sizes: &HashMap<&str, u64>, call_graph: &CallGraph, name: &str, seen: &mut HashSet<String>) -> Option<u64> {
+    let stack = stack_sizes.get(name).unwrap();
+    if seen.contains(name) {
+        None
+    } else {
+        let sname = String::from(name);
+        seen.insert(sname.clone());
+        let rv = stack + call_graph.callers(name).map(|name| get_stack_height(stack_sizes, call_graph, name, seen)).max_by(|x, y| {
+            match x {
+                None => std::cmp::Ordering::Greater,
+                Some(x) => match y {
+                    None => std::cmp::Ordering::Less,
+                    Some(y) => x.cmp(y)
+                }
+            }
+        }).unwrap_or(Some(0))?;
+        seen.remove(&sname);
+        Some(rv)
+    }
+}
+
 #[cfg(feature = "tools")]
 #[doc(hidden)]
 pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
+    let module_file = obj.with_extension("bc");
     let exec = &fs::read(exec)?;
     let obj = &fs::read(obj)?;
+    let module = Module::from_bc_path(module_file).map_err(failure::err_msg)?;
+    let module_analysis = ModuleAnalysis::new(&module);
+    let call_graph = module_analysis.call_graph();
 
     let stack_sizes = analyze_object(obj)?;
     let symbols = analyze_executable(exec)?;
 
     if symbols.have_32_bit_addresses {
         // 32-bit address space
-        println!("address\t\tstack\tname");
+        println!("address\t\tstack\tmax stack height\tname\tline number\tcallers");
+
+        /*println!("digraph {{");
+        println!("node[shape=record];");*/
 
         for (addr, sym) in symbols.defined {
             let stack = sym
@@ -344,14 +376,35 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
                 .next();
 
             if let (Some(name), Some(stack)) = (sym.names().first(), stack) {
+                let callees : Vec<String> = call_graph.callees(name).map(String::from).collect();
+                let callers : Vec<String> = call_graph.callers(name).map(String::from).collect();
+                let stack_height = get_stack_height(&stack_sizes, &call_graph, name, &mut HashSet::new());
+
+                /*
+                println!("{}[label=\"{{{}|{:?}}}\"];", name, rustc_demangle::demangle(name), stack_height);
+                for caller in callers {
+                    println!("{} -> {};", caller, name);
+                }
+                */
+               
                 println!(
-                    "{:#010x}\t{}\t{}",
+                    "{:#010x}\t{}\t{:?}\t{}\t{:?}\t{:?}",
                     addr,
                     stack,
-                    rustc_demangle::demangle(name)
+                    stack_height,
+                    rustc_demangle::demangle(name),
+                    module.get_func_by_name(name).unwrap().get_debug_loc().as_ref().map(|a| a.line),
+                    callers
                 );
+                /*println!(
+                    "CALLEES: {:?}", callees);
+                println!(
+                    "CALLERS: {:?}", callers);
+                println!(
+                    "LINE: {:?}", module.get_func_by_name(name).unwrap().get_debug_loc());*/
             }
         }
+        println!("}}");
     } else {
         // 64-bit address space
         println!("address\t\t\tstack\tname");
@@ -370,6 +423,9 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
                     stack,
                     rustc_demangle::demangle(name)
                 );
+                let callees : Vec<String> = call_graph.callees(name).map(String::from).collect();
+                println!(
+                    "CALLEES: {:?}", callees);
             }
         }
     }
