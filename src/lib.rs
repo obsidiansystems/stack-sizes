@@ -484,11 +484,10 @@ pub fn run(path: &Path) -> Result<(), failure::Error> {
             // 32-bit address space
             println!("address\t\tstack\tname");
 
-            for (name1, (addr, sym)) in BTreeMap::from_iter(symbols.defined.iter().map(|(k, v)| { let vv=v.names().first().clone(); (vv, (k, v.clone())) })) {
+            for (_, (addr, sym)) in BTreeMap::from_iter(symbols.defined.iter().map(|(k, v)| { let vv=v.names().first().clone(); (vv, (k, v.clone())) })) {
                 if let (Some(name), Some(stack)) = (sym.names().first(), sym.stack()) {
                     println!(
-                        "{} === {:#010x}\t{}\t{}",
-                        name1,
+                        "{:#010x}\t{}\t{}",
                         addr,
                         stack,
                         rustc_demangle::demangle(name)
