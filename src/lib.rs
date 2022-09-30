@@ -374,7 +374,7 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
         /*println!("digraph {{");
         println!("node[shape=record];");*/
 
-        for (addr, sym) in symbols.defined {
+        for (_, (addr, sym)) in BTreeMap::from_iter(symbols.defined.iter().map(|(k, v)| { let vv=v.names().first().clone(); (vv, (k, v.clone())) })) { //symbols.defined {
             let stack = sym
                 .names()
                 .iter()
@@ -484,10 +484,11 @@ pub fn run(path: &Path) -> Result<(), failure::Error> {
             // 32-bit address space
             println!("address\t\tstack\tname");
 
-            for (name, (addr, sym)) in BTreeMap::from_iter(symbols.defined.iter().map(|(k, v)| { let vv=v.names().first().clone(); (vv, (k, v.clone())) })) {
+            for (name1, (addr, sym)) in BTreeMap::from_iter(symbols.defined.iter().map(|(k, v)| { let vv=v.names().first().clone(); (vv, (k, v.clone())) })) {
                 if let (Some(name), Some(stack)) = (sym.names().first(), sym.stack()) {
                     println!(
-                        "{:#010x}\t{}\t{}",
+                        "{} === {:#010x}\t{}\t{}",
+                        name1,
                         addr,
                         stack,
                         rustc_demangle::demangle(name)
