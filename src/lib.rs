@@ -484,7 +484,7 @@ pub fn run(path: &Path) -> Result<(), failure::Error> {
             // 32-bit address space
             println!("address\t\tstack\tname");
 
-            for (name, (addr, sym)) in BTreeMap::from_iter(symbols.defined.into_iter().map(|(k, v)| { let vv=v.clone().names().first().clone(); (vv, (k, v.clone())) })) {
+            for (name, (addr, sym)) in BTreeMap::from_iter(symbols.defined.iter().map(|(k, v)| { let vv=v.names().first().clone(); (vv, (k, v.clone())) })) {
                 if let (Some(name), Some(stack)) = (sym.names().first(), sym.stack()) {
                     println!(
                         "{:#010x}\t{}\t{}",
