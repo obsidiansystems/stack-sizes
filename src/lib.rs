@@ -3,8 +3,8 @@
 //! [`.stack_sizes`]: https://llvm.org/docs/CodeGenerator.html#emitting-function-stack-size-information
 
 #![deny(rust_2018_idioms)]
-#![deny(missing_docs)]
-#![deny(warnings)]
+// #![deny(missing_docs)]
+// #![deny(warnings)]
 
 #[macro_use]
 extern crate failure;
@@ -327,30 +327,30 @@ pub fn analyze_executable(elf: &[u8]) -> Result<Functions<'_>, failure::Error> {
     })
 }
 
-fn get_stack_height_and_path(stack_sizes: &HashMap<&str, u64>, call_graph: &CallGraph, name: &str, seen: &mut HashSet<String>) -> Option<Vec<(u64, u64, String)>> {
+fn get_stack_height_and_path(stack_sizes: &HashMap<&str, u64>, call_graph: &CallGraph<'_>, name: &str, seen: &mut HashSet<String>) -> Option<Vec<(u64, u64, String)>> {
     let stack = stack_sizes.get(name).unwrap();
     if seen.contains(name) {
         None
     } else {
         let sname = String::from(name);
         seen.insert(sname.clone());
-        let mut max_path = call_graph.callers(name).map(|name| get_stack_height_and_path(stack_sizes, call_graph, name, seen)).max_by(|x, y| {
-            match x {
-                None => std::cmp::Ordering::Greater,
-                Some(x) => match y {
-                    None => std::cmp::Ordering::Less,
-                    Some(y) => x.last().unwrap().1.cmp(&y.last().unwrap().1)
+        let mut max_path = if sname.find("TrampolinedFuture").is_none() {
+            call_graph.callers(name).map(|name| get_stack_height_and_path(stack_sizes, call_graph, name, seen)).max_by(|x, y| {
+                match x {
+                    None => std::cmp::Ordering::Greater,
+                    Some(x) => match y {
+                        None => std::cmp::Ordering::Less,
+                        Some(y) => x.last().unwrap().1.cmp(&y.last().unwrap().1)
+                    }
                 }
-            }
-        }).unwrap_or(Some(Vec::new()))?;
+            }).unwrap_or(Some(Vec::new()))?
+        } else {
+            get_stack_height_and_path(stack_sizes, call_graph, "handle_fut_trampoline", seen)?
+        };
         seen.remove(&sname);
         max_path.push((*stack, stack+max_path.last().unwrap_or(&(0,0,String::new())).1, String::from(name)));
         Some(max_path)
     }
-}
-
-fn get_stack_height(stack_sizes: &HashMap<&str, u64>, call_graph: &CallGraph, name: &str, seen: &mut HashSet<String>) -> Option<u64> {
-    Some(get_stack_height_and_path(stack_sizes, call_graph, name, seen)?.last().unwrap().1)
 }
 
 #[cfg(feature = "tools")]
@@ -381,7 +381,7 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
                 .next();
 
             if let (Some(name), Some(stack)) = (sym.names().first(), stack) {
-                let callees : Vec<String> = call_graph.callees(name).map(String::from).collect();
+                let _callees : Vec<String> = call_graph.callees(name).map(String::from).collect();
                 let callers : Vec<String> = call_graph.callers(name).map(String::from).collect();
                 let max_backtrace = get_stack_height_and_path(&stack_sizes, &call_graph, name, &mut HashSet::new());
                 let stack_height = max_backtrace.as_ref().map(|a| a.last().unwrap().1);
