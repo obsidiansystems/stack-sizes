@@ -9,7 +9,7 @@ license = "MIT OR Apache-2.0"
 name = "stack-sizes"
 readme = "README.md"
 repository = "https://github.com/japaric/stack-sizes"
-version = "0.4.0"
+version = "0.4.0-p2"
 
 [[bin]]
 name = "stack-sizes"
