@@ -14,11 +14,21 @@ fn main() {
                 .required(true)
                 .index(1),
         )
+        .arg(
+            Arg::with_name("obj")
+                .help("obj file to analyze")
+                .required(false)
+                .index(2),
+        )
         .get_matches();
 
     let path = matches.value_of("ELF").unwrap();
+    let obj_opt = matches.value_of("obj");
 
-    if let Err(e) = stack_sizes::run(Path::new(path)) {
+    if let Err(e) = match obj_opt {
+        None => stack_sizes::run(Path::new(path)),
+        Some(ref obj) => stack_sizes::run_exec(Path::new(path), Path::new(obj)),
+    } {
         eprintln!("error: {}", e);
     }
 }
