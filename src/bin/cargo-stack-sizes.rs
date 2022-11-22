@@ -1,6 +1,8 @@
+#![feature(exit_status_error)]
+
 use std::{
     env, fs,
-    process::{self, Command},
+    process::Command,
     time::SystemTime,
 };
 
@@ -16,7 +18,7 @@ const AFTER_HELP: &str = "\
 This command behaves very much like `cargo rustc`. All the arguments *after* the `--` will be
  passed to the *top* `rustc` invocation.";
 
-fn main() {
+fn main() -> Result<(), failure::Error> {
     let matches = App::new("cargo-stack-sizes")
         .about(ABOUT)
         .version(env!("CARGO_PKG_VERSION"))
@@ -62,13 +64,10 @@ fn main() {
         )
         .get_matches();
 
-    match run(&matches) {
-        Ok(ec) => process::exit(ec),
-        Err(e) => eprintln!("error: {}", e),
-    }
+    run(&matches)
 }
 
-fn run(matches: &ArgMatches) -> Result<i32, failure::Error> {
+fn run(matches: &ArgMatches) -> Result<(), failure::Error> {
     let mut is_binary = false;
     let (krate, artifact) = if let Some(bin) = matches.value_of("bin") {
         is_binary = true;
@@ -147,11 +146,7 @@ fn run(matches: &ArgMatches) -> Result<i32, failure::Error> {
         eprintln!("{:?}", cargo);
     }
 
-    let status = cargo.status()?;
-
-    if !status.success() {
-        return Ok(status.code().unwrap_or(101));
-    }
+    cargo.status()?.exit_ok()?;
 
     let meta = rustc_version::version_meta()?;
     let host = meta.host;
@@ -195,7 +190,5 @@ fn run(matches: &ArgMatches) -> Result<i32, failure::Error> {
         }
     }
 
-    stack_sizes::run_exec(&path, &obj.expect("unreachable"))?;
-
-    Ok(0)
+    stack_sizes::run_exec(&path, &obj.expect("unreachable"))
 }
