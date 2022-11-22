@@ -127,20 +127,20 @@ fn run(matches: &ArgMatches) -> Result<(), failure::Error> {
     // "touch" some source file to trigger a rebuild
     let root = project.toml().parent().expect("UNREACHABLE");
     let now = FileTime::from_system_time(SystemTime::now());
-    if !filetime::set_file_times(root.join("src/main.rs"), now, now).is_ok() {
-        if !filetime::set_file_times(root.join("src/lib.rs"), now, now).is_ok() {
-            // look for some rust source file and "touch" it
-            let src = root.join("src");
-            let haystack = if src.exists() { &src } else { root };
+    if filetime::set_file_times(root.join("src/main.rs"), now, now).is_err()
+        && filetime::set_file_times(root.join("src/lib.rs"), now, now).is_err()
+    {
+        // look for some rust source file and "touch" it
+        let src = root.join("src");
+        let haystack = if src.exists() { &src } else { root };
 
-            for entry in WalkDir::new(haystack) {
-                let entry = entry?;
-                let path = entry.path();
+        for entry in WalkDir::new(haystack) {
+            let entry = entry?;
+            let path = entry.path();
 
-                if path.extension().map(|ext| ext == "rs").unwrap_or(false) {
-                    filetime::set_file_times(path, now, now)?;
-                    break;
-                }
+            if path.extension().map(|ext| ext == "rs").unwrap_or(false) {
+                filetime::set_file_times(path, now, now)?;
+                break;
             }
         }
     }
@@ -172,23 +172,17 @@ fn run(matches: &ArgMatches) -> Result<(), failure::Error> {
         let e = e?;
         let p = e.path();
 
-        if p.extension().map(|e| e == "o").unwrap_or(false) {
-            if p.file_stem()
+        if p.extension().map(|e| e == "o").unwrap_or(false)
+            && p.file_stem()
                 .expect("unreachable")
                 .to_str()
                 .expect("unreachable")
                 .starts_with(&prefix)
-            {
-                let modified = e.metadata()?.modified()?;
-                if obj.is_none() {
-                    obj = Some(p);
-                    mrm = modified;
-                } else {
-                    if modified > mrm {
-                        obj = Some(p);
-                        mrm = modified;
-                    }
-                }
+        {
+            let modified = e.metadata()?.modified()?;
+            if obj.is_none() || modified > mrm {
+                obj = Some(p);
+                mrm = modified;
             }
         }
     }

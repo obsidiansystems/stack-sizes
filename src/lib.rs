@@ -71,7 +71,7 @@ impl<'a> Function<'a> {
 fn is_tag(name: &str) -> bool {
     name == "$a" || name == "$t" || name == "$d" || {
         (name.starts_with("$a.") || name.starts_with("$d.") || name.starts_with("$t."))
-            && name.splitn(2, '.').nth(1).unwrap().parse::<u64>().is_ok()
+            && name.split_once('.').unwrap().1.parse::<u64>().is_ok()
     }
 }
 
@@ -225,7 +225,10 @@ pub fn analyze_object(obj: &[u8]) -> Result<HashMap<&str, u64>, failure::Error> 
 fn process_symtab_exec<'a, E>(
     entries: &'a [E],
     elf: &ElfFile<'a>,
-) -> Result<(HashSet<&'a str>, BTreeMap<u64, Function<'a>>, Option<u64>), failure::Error>
+) -> Result<
+    (HashSet<&'a str>, BTreeMap<u64, Function<'a>>, Option<u64>),
+    failure::Error,
+>
 where
     E: Entry + core::fmt::Debug,
 {
@@ -238,7 +241,7 @@ where
         let ty = entry.get_type();
         let value = entry.value();
         let size = entry.size();
-        let name = entry.get_name(&elf);
+        let name = entry.get_name(elf);
 
         if ty == Ok(Type::Func) {
             let name = name.map_err(failure::err_msg)?;
@@ -352,7 +355,7 @@ fn get_stack_height_and_path(
     } else {
         let sname = String::from(name);
         seen.insert(sname.clone());
-        let mut max_path = if sname.find("TrampolinedFuture").is_none() {
+        let mut max_path = if !sname.contains("TrampolinedFuture") {
             call_graph
                 .callers(name)
                 .map(|name| get_stack_height_and_path(stack_sizes, call_graph, name, seen))
@@ -444,7 +447,7 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
                         for (frame, stack, name) in max_backtrace.iter() {
                             println!("{}\t{}\t{}", frame, stack, name);
                         }
-                        println!("");
+                        println!();
                     }
                     None => {}
                 }
