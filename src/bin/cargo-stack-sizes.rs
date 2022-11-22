@@ -1,10 +1,6 @@
 #![feature(exit_status_error)]
 
-use std::{
-    env, fs,
-    process::Command,
-    time::SystemTime,
-};
+use std::{env, fs, process::Command, time::SystemTime};
 
 use cargo_project::{Artifact, Profile, Project};
 use clap::{App, AppSettings, Arg, ArgMatches};
@@ -112,7 +108,14 @@ fn run(matches: &ArgMatches) -> Result<(), failure::Error> {
         cargo.arg("--release");
     }
 
-    cargo.args(&["--", "-C", "lto", "--emit=obj,llvm-bc", "-Z", "emit-stack-sizes"]);
+    cargo.args(&[
+        "--",
+        "-C",
+        "lto",
+        "--emit=obj,llvm-bc",
+        "-Z",
+        "emit-stack-sizes",
+    ]);
     if let Some(arg) = matches.value_of("--") {
         cargo.arg(arg);
     }

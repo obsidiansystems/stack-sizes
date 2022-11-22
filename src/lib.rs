@@ -25,9 +25,9 @@ use xmas_elf::{
     ElfFile,
 };
 
-use llvm_ir::module::Module;
 use llvm_ir::debugloc::HasDebugLoc;
-use llvm_ir_analysis::{ModuleAnalysis, CallGraph};
+use llvm_ir::module::Module;
+use llvm_ir_analysis::{CallGraph, ModuleAnalysis};
 
 /// Functions found after analyzing an executable
 #[derive(Clone, Debug)]
@@ -287,20 +287,21 @@ pub fn analyze_executable(elf: &[u8]) -> Result<(Functions<'_>, Option<u64>), fa
     let elf = &ElfFile::new(elf).map_err(failure::err_msg)?;
 
     let mut have_32_bit_addresses = false;
-    let (undefined, mut defined, canary) = if let Some(section) = elf.find_section_by_name(".symtab") {
-        match section.get_data(elf).map_err(failure::err_msg)? {
-            SectionData::SymbolTable32(entries) => {
-                have_32_bit_addresses = true;
+    let (undefined, mut defined, canary) =
+        if let Some(section) = elf.find_section_by_name(".symtab") {
+            match section.get_data(elf).map_err(failure::err_msg)? {
+                SectionData::SymbolTable32(entries) => {
+                    have_32_bit_addresses = true;
 
-                process_symtab_exec(entries, elf)?
+                    process_symtab_exec(entries, elf)?
+                }
+
+                SectionData::SymbolTable64(entries) => process_symtab_exec(entries, elf)?,
+                _ => bail!("malformed .symtab section"),
             }
-
-            SectionData::SymbolTable64(entries) => process_symtab_exec(entries, elf)?,
-            _ => bail!("malformed .symtab section"),
-        }
-    } else {
-        (HashSet::new(), BTreeMap::new(), None)
-    };
+        } else {
+            (HashSet::new(), BTreeMap::new(), None)
+        };
 
     if let Some(stack_sizes) = elf.find_section_by_name(".stack_sizes") {
         let data = stack_sizes.raw_data(elf);
@@ -328,14 +329,22 @@ pub fn analyze_executable(elf: &[u8]) -> Result<(Functions<'_>, Option<u64>), fa
 
     println!("Canary is {:?}", canary);
 
-    Ok((Functions {
-        have_32_bit_addresses,
-        defined,
-        undefined,
-    }, canary))
+    Ok((
+        Functions {
+            have_32_bit_addresses,
+            defined,
+            undefined,
+        },
+        canary,
+    ))
 }
 
-fn get_stack_height_and_path(stack_sizes: &HashMap<&str, u64>, call_graph: &CallGraph<'_>, name: &str, seen: &mut HashSet<String>) -> Option<Vec<(u64, u64, String)>> {
+fn get_stack_height_and_path(
+    stack_sizes: &HashMap<&str, u64>,
+    call_graph: &CallGraph<'_>,
+    name: &str,
+    seen: &mut HashSet<String>,
+) -> Option<Vec<(u64, u64, String)>> {
     let stack = stack_sizes.get(name).unwrap();
     if seen.contains(name) {
         println!("Loop in call graph: at {:#?} {:#?}", name, seen);
@@ -344,20 +353,26 @@ fn get_stack_height_and_path(stack_sizes: &HashMap<&str, u64>, call_graph: &Call
         let sname = String::from(name);
         seen.insert(sname.clone());
         let mut max_path = if sname.find("TrampolinedFuture").is_none() {
-            call_graph.callers(name).map(|name| get_stack_height_and_path(stack_sizes, call_graph, name, seen)).max_by(|x, y| {
-                match x {
+            call_graph
+                .callers(name)
+                .map(|name| get_stack_height_and_path(stack_sizes, call_graph, name, seen))
+                .max_by(|x, y| match x {
                     None => std::cmp::Ordering::Greater,
                     Some(x) => match y {
                         None => std::cmp::Ordering::Less,
-                        Some(y) => x.last().unwrap().1.cmp(&y.last().unwrap().1)
-                    }
-                }
-            }).unwrap_or(Some(Vec::new()))?
+                        Some(y) => x.last().unwrap().1.cmp(&y.last().unwrap().1),
+                    },
+                })
+                .unwrap_or(Some(Vec::new()))?
         } else {
             get_stack_height_and_path(stack_sizes, call_graph, "handle_fut_trampoline", seen)?
         };
         seen.remove(&sname);
-        max_path.push((*stack, stack+max_path.last().unwrap_or(&(0,0,String::new())).1, String::from(name)));
+        max_path.push((
+            *stack,
+            stack + max_path.last().unwrap_or(&(0, 0, String::new())).1,
+            String::from(name),
+        ));
         Some(max_path)
     }
 }
@@ -392,9 +407,10 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
                 .next();
 
             if let (Some(name), Some(stack)) = (sym.names().first(), stack) {
-                let _callees : Vec<String> = call_graph.callees(name).map(String::from).collect();
-                let callers : Vec<String> = call_graph.callers(name).map(String::from).collect();
-                let max_backtrace = get_stack_height_and_path(&stack_sizes, &call_graph, name, &mut HashSet::new());
+                let _callees: Vec<String> = call_graph.callees(name).map(String::from).collect();
+                let callers: Vec<String> = call_graph.callers(name).map(String::from).collect();
+                let max_backtrace =
+                    get_stack_height_and_path(&stack_sizes, &call_graph, name, &mut HashSet::new());
                 let stack_height = max_backtrace.as_ref().map(|a| a.last().unwrap().1);
 
                 if stack_height > maximum_stack {
@@ -407,14 +423,19 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
                     println!("{} -> {};", caller, name);
                 }
                 */
-               
+
                 println!(
                     "{:#010x}\t{}\t{:?}\t{}\t{:?}\t{:?}",
                     addr,
                     stack,
                     stack_height,
                     rustc_demangle::demangle(name),
-                    module.get_func_by_name(name).unwrap().get_debug_loc().as_ref().map(|a| a.line),
+                    module
+                        .get_func_by_name(name)
+                        .unwrap()
+                        .get_debug_loc()
+                        .as_ref()
+                        .map(|a| a.line),
                     callers
                 );
                 match max_backtrace {
@@ -454,17 +475,19 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
                     stack,
                     rustc_demangle::demangle(name)
                 );
-                let callees : Vec<String> = call_graph.callees(name).map(String::from).collect();
-                println!(
-                    "CALLEES: {:?}", callees);
+                let callees: Vec<String> = call_graph.callees(name).map(String::from).collect();
+                println!("CALLEES: {:?}", callees);
             }
         }
     }
 
     let canary_size = canary.map(|a| a & 0xffffff);
 
-    let maximum_total = maximum_stack.zip(canary_size).map(|(a,b)| a+b);
-    println!("Maximum stack: {:?}\nGlobals: {:?}\nTotal memory: {:?}\n", maximum_stack, canary_size, maximum_total);
+    let maximum_total = maximum_stack.zip(canary_size).map(|(a, b)| a + b);
+    println!(
+        "Maximum stack: {:?}\nGlobals: {:?}\nTotal memory: {:?}\n",
+        maximum_stack, canary_size, maximum_total
+    );
     let stack_limit = 4500;
     match maximum_stack {
         Some(m) if m > stack_limit => {

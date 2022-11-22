@@ -4,7 +4,7 @@ use clap::{App, Arg};
 
 const ABOUT: &str = "Prints the stack usage of each function in an ELF file.";
 
-fn main() -> Result<(), failure::Error>  {
+fn main() -> Result<(), failure::Error> {
     let matches = App::new("stack-sizes")
         .about(ABOUT)
         .version(env!("CARGO_PKG_VERSION"))
