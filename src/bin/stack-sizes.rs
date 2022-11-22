@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::str::FromStr;
 
 use clap::{App, Arg};
 
@@ -20,6 +21,12 @@ fn main() -> Result<(), failure::Error> {
                 .required(false)
                 .index(2),
         )
+        .arg(
+            Arg::with_name("mem-limit")
+                .long("mem-limit")
+                .default_value("4500")
+                .help("Maximum amount of memory allowed"),
+        )
         .get_matches();
 
     let path = matches.value_of("ELF").unwrap();
@@ -27,6 +34,9 @@ fn main() -> Result<(), failure::Error> {
 
     match obj_opt {
         None => stack_sizes::run(Path::new(path)),
-        Some(ref obj) => stack_sizes::run_exec(Path::new(path), Path::new(obj)),
+        Some(ref obj) => {
+            let limit = FromStr::from_str(matches.value_of("mem-limit").expect("has default"))?;
+            stack_sizes::run_exec(Path::new(path), Path::new(obj), limit)
+        }
     }
 }

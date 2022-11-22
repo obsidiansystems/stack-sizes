@@ -1,5 +1,6 @@
 #![feature(exit_status_error)]
 
+use std::str::FromStr;
 use std::{env, fs, process::Command, time::SystemTime};
 
 use cargo_project::{Artifact, Profile, Project};
@@ -57,6 +58,12 @@ fn main() -> Result<(), failure::Error> {
             Arg::with_name("release")
                 .long("release")
                 .help("Build artifacts in release mode, with optimizations"),
+        )
+        .arg(
+            Arg::with_name("mem-limit")
+                .long("mem-limit")
+                .default_value("4500")
+                .help("Maximum amount of memory allowed"),
         )
         .get_matches();
 
@@ -187,5 +194,6 @@ fn run(matches: &ArgMatches) -> Result<(), failure::Error> {
         }
     }
 
-    stack_sizes::run_exec(&path, &obj.expect("unreachable"))
+    let limit = FromStr::from_str(matches.value_of("mem-limit").expect("has default"))?;
+    stack_sizes::run_exec(&path, &obj.expect("unreachable"), limit)
 }

@@ -382,7 +382,7 @@ fn get_stack_height_and_path(
 
 #[cfg(feature = "tools")]
 #[doc(hidden)]
-pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
+pub fn run_exec(exec: &Path, obj: &Path, memory_limit: u64) -> Result<(), failure::Error> {
     let module_file = obj.with_extension("bc");
     let exec = &fs::read(exec)?;
     let obj = &fs::read(obj)?;
@@ -491,7 +491,6 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
         "Maximum stack: {:?}\nGlobals: {:?}\nTotal memory: {:?}\n",
         maximum_stack, canary_size, maximum_total
     );
-    let memory_limit = 4500;
     match maximum_total {
         Some(m) if m > memory_limit => {
             failure::bail!("Used too much memory: {} > {}", m, memory_limit)
