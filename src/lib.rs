@@ -491,10 +491,10 @@ pub fn run_exec(exec: &Path, obj: &Path) -> Result<(), failure::Error> {
         "Maximum stack: {:?}\nGlobals: {:?}\nTotal memory: {:?}\n",
         maximum_stack, canary_size, maximum_total
     );
-    let stack_limit = 4500;
-    match maximum_stack {
-        Some(m) if m > stack_limit => {
-            failure::bail!("Used too much stack: {} > {}", m, stack_limit)
+    let memory_limit = 4500;
+    match maximum_total {
+        Some(m) if m > memory_limit => {
+            failure::bail!("Used too much memory: {} > {}", m, memory_limit)
         }
         _ => {}
     }
