@@ -226,7 +226,7 @@ fn process_symtab_exec<'a, E>(
     entries: &'a [E],
     elf: &ElfFile<'a>,
 ) -> Result<
-    (HashSet<&'a str>, BTreeMap<u64, Function<'a>>, Option<u64>),
+    (HashSet<&'a str>, BTreeMap<u64, Function<'a>>, Option<u64>, Option<u64>),
     failure::Error,
 >
 where
@@ -235,6 +235,7 @@ where
     let mut defined = BTreeMap::new();
     let mut maybe_aliases = BTreeMap::new();
     let mut undefined = HashSet::new();
+    let mut ram_begin = None;
     let mut canary = None;
 
     for entry in entries {
@@ -259,6 +260,9 @@ where
                     .names
                     .push(name);
             }
+        } else if name == Ok("_data") {
+            println!("RAM BEGIN FOUND: {:?}", value);
+            ram_begin = Some(value);
         } else if name == Ok("app_stack_canary") {
             println!("CANARY FOUND: {:?}", value);
             canary = Some(value);
@@ -282,15 +286,15 @@ where
         }
     }
 
-    Ok((undefined, defined, canary))
+    Ok((undefined, defined, ram_begin, canary))
 }
 
 /// Parses an executable ELF file and returns a list of functions and their stack usage
-pub fn analyze_executable(elf: &[u8]) -> Result<(Functions<'_>, Option<u64>), failure::Error> {
+pub fn analyze_executable(elf: &[u8]) -> Result<(Functions<'_>, Option<u64>, Option<u64>), failure::Error> {
     let elf = &ElfFile::new(elf).map_err(failure::err_msg)?;
 
     let mut have_32_bit_addresses = false;
-    let (undefined, mut defined, canary) =
+    let (undefined, mut defined, ram_begin, canary) =
         if let Some(section) = elf.find_section_by_name(".symtab") {
             match section.get_data(elf).map_err(failure::err_msg)? {
                 SectionData::SymbolTable32(entries) => {
@@ -303,7 +307,7 @@ pub fn analyze_executable(elf: &[u8]) -> Result<(Functions<'_>, Option<u64>), fa
                 _ => bail!("malformed .symtab section"),
             }
         } else {
-            (HashSet::new(), BTreeMap::new(), None)
+            (HashSet::new(), BTreeMap::new(), None, None)
         };
 
     if let Some(stack_sizes) = elf.find_section_by_name(".stack_sizes") {
@@ -330,6 +334,7 @@ pub fn analyze_executable(elf: &[u8]) -> Result<(Functions<'_>, Option<u64>), fa
         }
     }
 
+    println!("Ram begin is {:?}", ram_begin);
     println!("Canary is {:?}", canary);
 
     Ok((
@@ -338,6 +343,7 @@ pub fn analyze_executable(elf: &[u8]) -> Result<(Functions<'_>, Option<u64>), fa
             defined,
             undefined,
         },
+        ram_begin,
         canary,
     ))
 }
@@ -391,7 +397,7 @@ pub fn run_exec(exec: &Path, obj: &Path, memory_limit: u64) -> Result<(), failur
     let call_graph = module_analysis.call_graph();
 
     let stack_sizes = analyze_object(obj)?;
-    let (symbols, canary) = analyze_executable(exec)?;
+    let (symbols, ram_begin, canary) = analyze_executable(exec)?;
 
     let mut maximum_stack = None;
 
@@ -484,7 +490,7 @@ pub fn run_exec(exec: &Path, obj: &Path, memory_limit: u64) -> Result<(), failur
         }
     }
 
-    let canary_size = canary.map(|a| a & 0xffffff);
+    let canary_size = canary.zip(ram_begin).map(|(c, r)| c -r);
 
     let maximum_total = maximum_stack.zip(canary_size).map(|(a, b)| a + b);
     println!(
@@ -521,7 +527,7 @@ pub fn run(path: &Path) -> Result<(), failure::Error> {
 
         Ok(())
     } else {
-        let (symbols, _) = analyze_executable(bytes)?;
+        let (symbols, _, _) = analyze_executable(bytes)?;
 
         if symbols
             .defined
